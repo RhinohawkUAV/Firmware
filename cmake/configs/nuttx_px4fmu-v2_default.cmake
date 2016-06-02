@@ -91,11 +91,12 @@ set(config_module_list
 	#
 	# Vehicle Control
 	#
-	modules/fw_pos_control_l1
-	modules/fw_att_control
+	#modules/fw_pos_control_l1
+	#modules/fw_att_control
 	modules/mc_att_control
 	modules/mc_pos_control
-	modules/vtol_att_control
+	modules/mc_booster_control
+	#modules/vtol_att_control
 
 	#
 	# Logging
@@ -131,7 +132,7 @@ set(config_module_list
 	platforms/nuttx
 
 	# had to add for cmake, not sure why wasn't in original config
-	platforms/common 
+	platforms/common
 	platforms/nuttx/px4_layer
 
 	#

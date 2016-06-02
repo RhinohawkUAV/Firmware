@@ -634,11 +634,11 @@ then
 		else
 			if param compare SYS_LOGGER 0
 			then
-				if sdlog2 start -r 100 -a -b 9 -t
+				if sdlog2 start -r 100 -a -b 10 -t
 				then
 				fi
 			else
-				if logger start -b 9
+				if logger start -b 20
 				then
 				fi
 			fi
@@ -684,6 +684,7 @@ then
 	#
 	# Multicopters setup
 	#
+	#if [$]
 	if [ $VEHICLE_TYPE == mc ]
 	then
 		echo "MULTICOPTER"
@@ -705,6 +706,10 @@ then
 				set MAV_TYPE 2
 			fi
 			if [ $MIXER == quad_h ]
+			then
+				set MAV_TYPE 2
+			fi
+			if [ $MIXER == b_quad_x]
 			then
 				set MAV_TYPE 2
 			fi
