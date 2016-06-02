@@ -40,6 +40,7 @@ set(msg_file_names
 	airspeed.msg
 	att_pos_mocap.msg
 	battery_status.msg
+	booster_setpoint.msg
 	camera_trigger.msg
 	commander_state.msg
 	control_state.msg

@@ -78,6 +78,7 @@
 #include <uORB/topics/vehicle_global_velocity_setpoint.h>
 #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <uORB/topics/vehicle_land_detected.h>
+#include <uORB/topics/booster_setpoint.h>
 
 #include <systemlib/systemlib.h>
 #include <systemlib/mavlink_log.h>
@@ -142,8 +143,9 @@ private:
 	orb_advert_t	_att_sp_pub;			/**< attitude setpoint publication */
 	orb_advert_t	_local_pos_sp_pub;		/**< vehicle local position setpoint publication */
 	orb_advert_t	_global_vel_sp_pub;		/**< vehicle global velocity setpoint publication */
-
+	orb_advert_t  _booser_setpoint_pub; /**< multirotor booster setpoint publication */
 	orb_id_t _attitude_setpoint_id;
+
 
 	struct vehicle_status_s 			_vehicle_status; 	/**< vehicle status */
 	struct vehicle_land_detected_s 			_vehicle_land_detected;	/**< vehicle land detected */
@@ -156,6 +158,7 @@ private:
 	struct position_setpoint_triplet_s		_pos_sp_triplet;	/**< vehicle global position setpoint triplet */
 	struct vehicle_local_position_setpoint_s	_local_pos_sp;		/**< vehicle local position setpoint */
 	struct vehicle_global_velocity_setpoint_s	_global_vel_sp;		/**< vehicle global velocity setpoint */
+  struct booster_setpoint_s   _booster_sp;   /**< multirotor booster_setpoint_s */
 
 	control::BlockParamFloat _manual_thr_min;
 	control::BlockParamFloat _manual_thr_max;
@@ -165,6 +168,8 @@ private:
 	control::BlockDerivative _vel_z_deriv;
 
 	struct {
+		param_t f_pitch_max;
+		param_t boosted;
 		param_t thr_min;
 		param_t thr_max;
 		param_t thr_hover;
@@ -202,6 +207,8 @@ private:
 	}		_params_handles;		/**< handles for interesting parameters */
 
 	struct {
+		bool boosted;
+		float f_pitch_max;
 		float thr_min;
 		float thr_max;
 		float thr_hover;
@@ -370,12 +377,16 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	_global_vel_sp_sub(-1),
 
 	/* publications */
+
 	_att_sp_pub(nullptr),
 	_local_pos_sp_pub(nullptr),
 	_global_vel_sp_pub(nullptr),
+	_booser_setpoint_pub(nullptr),
 	_attitude_setpoint_id(0),
+
 	_vehicle_status{},
 	_vehicle_land_detected{},
+
 	_ctrl_state{},
 	_att_sp{},
 	_manual{},
@@ -385,6 +396,7 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	_pos_sp_triplet{},
 	_local_pos_sp{},
 	_global_vel_sp{},
+	_booster_sp{},
 	_manual_thr_min(this, "MANTHR_MIN"),
 	_manual_thr_max(this, "MANTHR_MAX"),
 	_vel_x_deriv(this, "VELD"),
@@ -433,7 +445,8 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	_vel_err_d.zero();
 
 	_R.identity();
-
+	_params_handles.boosted = param_find("MPC_IS_BOOSTED");
+	_params_handles.f_pitch_max = param_find("MPC_F_PITCH_MAX");
 	_params_handles.thr_min		= param_find("MPC_THR_MIN");
 	_params_handles.thr_max		= param_find("MPC_THR_MAX");
 	_params_handles.thr_hover	= param_find("MPC_THR_HOVER");
@@ -527,10 +540,13 @@ MulticopterPositionControl::parameters_update(bool force)
 		param_get(_params_handles.alt_ctl_dz, &_params.alt_ctl_dz);
 		param_get(_params_handles.alt_ctl_dy, &_params.alt_ctl_dy);
 		param_get(_params_handles.tilt_max_air, &_params.tilt_max_air);
+		param_get(_params_handles.f_pitch_max, &_params.f_pitch_max);
 		_params.tilt_max_air = math::radians(_params.tilt_max_air);
+		_params.f_pitch_max = math::radians(_params.f_pitch_max);
 		param_get(_params_handles.land_speed, &_params.land_speed);
 		param_get(_params_handles.tko_speed, &_params.tko_speed);
 		param_get(_params_handles.tilt_max_land, &_params.tilt_max_land);
+		param_get(_params_handles.boosted, &_params.boosted);
 		_params.tilt_max_land = math::radians(_params.tilt_max_land);
 
 		float v;
@@ -2065,17 +2081,42 @@ MulticopterPositionControl::task_main()
 		 * if the vehicle is a VTOL and it's just doing a transition (the VTOL attitude control module will generate
 		 * attitude setpoints for the transition).
 		 */
+		 /* ADD in booster motor setpoint.
+		  *
+		  *
+		 */
+		 if(_params.boosted){
+			 _booster_sp.boosted = true;
+			 float pitch = _att_sp.pitch_body;
+			 if(pitch <= -1 *_params.f_pitch_max){
+				 _booster_sp.booster = ((pitch + _params.f_pitch_max) / -1*(_params.tilt_max_air + _params.f_pitch_max));
+				 _att_sp.pitch_body = -1 * _params.f_pitch_max;
+			 }
+			 else{
+				 _booster_sp.booster = 0.0f;
+			 }
+		 }
+		 else{
+			 // this is for testing.
+			 _booster_sp.boosted = false;
+			 _booster_sp.booster = 0.0f;
+		 }
 		if (!(_control_mode.flag_control_offboard_enabled &&
 				!(_control_mode.flag_control_position_enabled ||
 				  _control_mode.flag_control_velocity_enabled ||
 				  _control_mode.flag_control_acceleration_enabled))) {
-
 			if (_att_sp_pub != nullptr) {
 				orb_publish(_attitude_setpoint_id, _att_sp_pub, &_att_sp);
 
 			} else if (_attitude_setpoint_id) {
 				_att_sp_pub = orb_advertise(_attitude_setpoint_id, &_att_sp);
 			}
+		}
+		if(_booser_setpoint_pub != nullptr){
+				orb_publish(ORB_ID(booster_setpoint), _booser_setpoint_pub, &_booster_sp);
+		}
+		else{
+				_booser_setpoint_pub = orb_advertise(ORB_ID(booster_setpoint), &_booster_sp);
 		}
 
 		/* reset altitude controller integral (hovering throttle) to manual throttle after manual throttle control */

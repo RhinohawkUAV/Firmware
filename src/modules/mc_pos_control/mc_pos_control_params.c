@@ -36,7 +36,33 @@
  * Multicopter position controller parameters.
  *
  * @author Anton Babushkin <anton@px4.io>
+ * @author Sam Winkelstein <sjwinkels44@gmail.com>
  */
+
+
+  /**
+   * Boolean to turn on boosted multirotor
+   *
+   *
+   * @group Multicopter Position Control
+   */
+  PARAM_DEFINE_INT32(MPC_IS_BOOSTED, 0);
+
+
+ /**
+  * Maximum forward pitch in boosted mode.
+  *
+  * It is mandatory to use an angle less the Max_tilt_air
+  * It is recomended to use a value under 20.
+  *
+  * @unit norm
+  * @min 0.05
+  * @max 45.0
+  * @decimal 2
+  * @increment 0.01
+  * @group Multicopter Position Control
+  */
+ PARAM_DEFINE_FLOAT(MPC_F_PITCH_MAX, 15.0f);
 
 /**
  * Minimum thrust in auto thrust control
