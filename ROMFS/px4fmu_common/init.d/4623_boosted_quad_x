@@ -14,4 +14,8 @@ sh /etc/init.d/rc.mc_defaults
 
 set MIXER b_quad_x
 
+
+
 set PWM_OUTPUTS 12345
+set PWM_MIN 1075
+set PWM_MAX 1950

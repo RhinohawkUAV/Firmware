@@ -47,6 +47,9 @@
  * Controller doesn't use Euler angles for work, they generated only for more human-friendly control and logging.
  *
  * @author Anton Babushkin <anton.babushkin@me.com>
+ *
+ *
+ @author Sam Winkelstein <sjwinkels44@gmail.com>
  */
 
 #include <px4_config.h>
@@ -79,7 +82,7 @@
 #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <uORB/topics/vehicle_land_detected.h>
 #include <uORB/topics/booster_setpoint.h>
-
+#include <uORB/topics/actuator_controls.h>
 #include <systemlib/systemlib.h>
 #include <systemlib/mavlink_log.h>
 #include <mathlib/mathlib.h>
@@ -126,7 +129,7 @@ private:
 	bool		_task_should_exit;		/**< if true, task should exit */
 	int		_control_task;			/**< task handle for task */
 	orb_advert_t	_mavlink_log_pub;		/**< mavlink log advert */
-
+ float booster;
 	int		_vehicle_status_sub;		/**< vehicle status subscription */
 	int		_vehicle_land_detected_sub;	/**< vehicle land detected subscription */
 	int		_ctrl_state_sub;		/**< control state subscription */
@@ -144,6 +147,7 @@ private:
 	orb_advert_t	_local_pos_sp_pub;		/**< vehicle local position setpoint publication */
 	orb_advert_t	_global_vel_sp_pub;		/**< vehicle global velocity setpoint publication */
 	orb_advert_t  _booser_setpoint_pub; /**< multirotor booster setpoint publication */
+	orb_advert_t  _actuators_1_pub;
 	orb_id_t _attitude_setpoint_id;
 
 
@@ -159,6 +163,7 @@ private:
 	struct vehicle_local_position_setpoint_s	_local_pos_sp;		/**< vehicle local position setpoint */
 	struct vehicle_global_velocity_setpoint_s	_global_vel_sp;		/**< vehicle global velocity setpoint */
   struct booster_setpoint_s   _booster_sp;   /**< multirotor booster_setpoint_s */
+	struct actuator_controls_s _actuators;    /**< actuator struct for group 0 for boosted multicopter */
 
 	control::BlockParamFloat _manual_thr_min;
 	control::BlockParamFloat _manual_thr_max;
@@ -382,11 +387,11 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	_local_pos_sp_pub(nullptr),
 	_global_vel_sp_pub(nullptr),
 	_booser_setpoint_pub(nullptr),
+	_actuators_1_pub(nullptr),
 	_attitude_setpoint_id(0),
 
 	_vehicle_status{},
 	_vehicle_land_detected{},
-
 	_ctrl_state{},
 	_att_sp{},
 	_manual{},
@@ -423,6 +428,7 @@ MulticopterPositionControl::MulticopterPositionControl() :
 {
 	// Make the quaternion valid for control state
 	_ctrl_state.q[0] = 1.0f;
+	booster = 0;
 
 	memset(&_ref_pos, 0, sizeof(_ref_pos));
 
@@ -654,6 +660,7 @@ MulticopterPositionControl::poll_subscriptions()
 	if (updated) {
 		orb_copy(ORB_ID(vehicle_land_detected), _vehicle_land_detected_sub, &_vehicle_land_detected);
 	}
+
 
 	orb_check(_ctrl_state_sub, &updated);
 
@@ -2085,22 +2092,22 @@ MulticopterPositionControl::task_main()
 		  *
 		  *
 		 */
+
 		 if(_params.boosted){
-			 _booster_sp.boosted = true;
+			 booster = true;
 			 float pitch = _att_sp.pitch_body;
 			 if(pitch <= -1 *_params.f_pitch_max){
-				 _booster_sp.booster = ((pitch + _params.f_pitch_max) / -1*(_params.tilt_max_air + _params.f_pitch_max));
+				 booster = ((pitch + _params.f_pitch_max) / -1*(_params.tilt_max_air + _params.f_pitch_max));
 				 _att_sp.pitch_body = -1 * _params.f_pitch_max;
 			 }
 			 else{
-				 _booster_sp.booster = 0.0f;
+				 booster = 0.0f;
 			 }
 		 }
 		 else{
 			 // this is for testing.
-			 _booster_sp.boosted = false;
-			 _booster_sp.booster = 0.0f;
-		 }
+	 		_actuators.control[1] = 0.0f;
+			}
 		if (!(_control_mode.flag_control_offboard_enabled &&
 				!(_control_mode.flag_control_position_enabled ||
 				  _control_mode.flag_control_velocity_enabled ||
@@ -2118,11 +2125,23 @@ MulticopterPositionControl::task_main()
 		else{
 				_booser_setpoint_pub = orb_advertise(ORB_ID(booster_setpoint), &_booster_sp);
 		}
+		if(_params.boosted){
+		if(_actuators_1_pub != nullptr){
+	 _actuators.control[1] = booster;
+		 orb_publish(ORB_ID(actuator_controls_1), _actuators_1_pub, &_actuators);
+	 }
+	 else{
+		 _actuators_1_pub = orb_advertise(ORB_ID(actuator_controls_1), &_actuators);
+	 }
+ }
+
+
 
 		/* reset altitude controller integral (hovering throttle) to manual throttle after manual throttle control */
 		reset_int_z_manual = _control_mode.flag_armed && _control_mode.flag_control_manual_enabled
 				     && !_control_mode.flag_control_climb_rate_enabled;
 	}
+
 
 	mavlink_log_info(&_mavlink_log_pub, "[mpc] stopped");
 

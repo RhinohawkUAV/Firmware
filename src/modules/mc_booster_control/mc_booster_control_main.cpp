@@ -92,12 +92,9 @@ private:
     orb_advert_t   _actuators_0_pub;  //orb advertiser for actuator publishing
     orb_id_t       _actuators_id;     //orb Id for actuator publishing
 
-    struct {
-      float booster_scale;     // booster scale parameter
-    } _params;
-
 
 };
+
 namespace mc_booster_control{
   MulticoptorBoosterControl * g_control;
 }
@@ -185,9 +182,7 @@ MulticoptorBoosterControl::task_main(){
   _booster_setpoint_sub = orb_subscribe(ORB_ID(booster_setpoint));
   _actuators_0_sub = orb_subscribe(ORB_ID(actuator_controls));
   _actuator_armed_sub = orb_subscribe(ORB_ID(actuator_armed));
-
-  _booster_sp.booster = 0.0f;
-  _arming.armed = false;
+  
   while(!_task_should_exit){
     poll_subscriptions();
     if(_booster_sp.boosted){
@@ -213,7 +208,7 @@ MulticoptorBoosterControl::start()
      _control_task = px4_task_spawn_cmd("mc_booster_control",
      SCHED_DEFAULT,
      SCHED_PRIORITY_MAX - 5,
-     1500,
+     2400,
      (px4_main_t)&MulticoptorBoosterControl::task_main_trampoline,
      nullptr);
      if(_control_task < 0) {
@@ -232,6 +227,10 @@ int mc_booster_control_main(int argc, char *argv[]){
   }
   if (!strcmp(argv[1], "start")) {
 
+    if (mc_booster_control::g_control != nullptr) {
+      warnx("already running");
+      return 1;
+    }
     mc_booster_control::g_control =  new MulticoptorBoosterControl;
 
     if(mc_booster_control::g_control == nullptr){
